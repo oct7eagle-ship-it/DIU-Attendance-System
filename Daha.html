@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DIU Attendance System</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="manifest.json">
+<script>
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(()=>{/* ignore sw error */});
+}
+</script>
+<style>
+body { font-family: Arial; max-width: 1000px; margin: auto; padding: 18px; }
+h2 { margin-top:0; }
+.card { border: 1px solid #ccc; padding: 14px; border-radius: 8px; margin-bottom: 14px; }
+.btn { background: #007bff; color: white; padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; }
+.btn.red { background: #c0392b; }
+.input { width: 100%; padding: 8px; margin: 8px 0; border-radius: 6px; border: 1px solid #aaa; }
+.alert { padding: 10px; border-radius: 6px; margin-bottom: 10px; }
+.alert.err { background: #f8d7da; color: #721c24; }
+.alert.ok { background: #d4edda; color: #155724; }
+.student { display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #eee; border-radius:6px; margin-bottom:6px; }
+.table { width:100%; border-collapse:collapse; }
+.table th, .table td { border:1px solid #ddd; padding:8px; text-align:left; }
+.small { font-size:13px; color:#666; }
+#popup { position: fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; padding:16px; border-radius:8px; border:1px solid #999; width:360px; z-index:1000; display:none; max-height:70vh; overflow:auto; }
+#overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.45); display:none; z-index:900; }
+.disabled { opacity:0.6; pointer-events:none; }
+</style>
+</head>
+<body>
+<h2>DIU Attendance System</h2>
+
+<div id="overlay"></div>
+<div id="popup"></div>
+
+<div id="app"></div>
+
+<script>
+// -------------------------- COURSES (original Mon-Wed preserved; Thu-Fri-Sat-Sun added) --------------------------
+
+const COURSES = {
+  /* ---------- Original Mon-Wed (kept as you provided) ---------- */
+  "BUS101": {
+    course_name: "Intro to Business",
+    lecturer: "Maslax",
+    username: "maslax",
+    password: "12",
+    day: "thursday",
+    time: "13:30-15:30",
+    faculty: "Year1",
+    students: [
+      "Abdikadir Hassan Mohamed","Abdirabi Abdinur Mohamed","Ahmed Abdiwali Mohamed","Cabdiqaadir Maxamuud Cabdi",
+      "Fathi Dek Hussein Salat","Khalid Abdullahi Ahmed","Mahamed Mahamud Yusuf","Mohamed Abdi Daud",
+      "Ramlo Abdullahi Abdirahman","Suleyman Mahamed Iman"
+    ]
+  },
+
+  "BIO101": {
+    course_name: "Human Biology",
+    lecturer: "Shugri",
+    username: "shugri",
+    password: "12",
+    day: "Monday",
+    time: "13:30-15:30",
+    faculty: "Year1",
+    students: [
+      "Aisha Mohamed khalif","Bashiir Mahamoud Mohamed","Cawil Shukri Bile","Damac Hussein Ibrahim",
+      "Fardowsa Muuse Cabdiraxman","Hassan Sugal Mahamed","Khadija Mohamed Duale","Mahdi Mohamed Adan",
+      "Riwan Ahmed Adan","Yahye Salad Duale","Abdisalan Mohamud Yusuf","Ali Mohamed Adan","Fadumo Mohamed Omar Osman",
+      "Falastin Hassan Ahmed","Falis Ismail Ahmed","Farhan Aden Abdi","Halimo Mahad Frahah","Iqro Cilmi Ciise",
+      "Ismail Ali Hussein Ali","Nasteho Osman Ali","Nimco Abshir Osman","Omar Mohamed Saman"
+    ]
+  },
+
+  "CL101": {
+    course_name: "C/Language",
+    lecturer: "Wadani",
+    username: "wadani",
+    password: "12",
+    day: "Monday",
+    time: "13:30-15:30",
+    faculty: "Year1",
+    students: [
+      "Abas Mahamad Ali Mahamu","Abas Abdullahi Ahmed","Abdi Hared Garane","Abdihakin Ibrahim Khalif Hussein",
+      "Abdirahman Yahye Mohamed Noor","Abdirashid Abdikadir Mohamed","Ahmed Abdifatah Mohamed","Ahmed Abdulahi Abdi",
+      "Amino Abdirahman isak Ali","Cabdiraxman Maslax Caamir","Farhan Mohamed Fahiye","Fathi Abdiaziz Hassan",
+      "Hassan Madey Abow","Hassan Muktar Mohamed Abukar","Hussein Abdi Mahamed","Ifrax Yuusuf Ismaaciil",
+      "Isse Hassan Abdi","Khalid Ahmed Abdinor","Maxamed Maxamuud Axmed","Mohamed Abdikani Ibrahim Iman",
+      "Seynab Maxamed Jaamac","Suleyman Dahir Muse"
+    ]
+  },
+
+  "MATH101": {
+    course_name: "General Mathematics",
+    lecturer: "Mr Abdikadir",
+    username: "abdikadir",
+    password: "12",
+    day: "Monday",
+    time: "16:00-17:40",
+    faculty: "Year1",
+    students: [
+      "Aisha Mohamed khalif","Bashiir Mahamoud Mohamed","Cawil Shukri Bile","Damac Hussein Ibrahim",
+      "Fardowsa Muuse Cabdiraxman","Hassan Sugal Mahamed","Khadija Mohamed Duale","Mahdi Mohamed Adan",
+      "Riwan Ahmed Adan","Sakariye Ismaaciil Yuusuf","Yahye Salad Duale","Abas Mahamad Ali Mahamu",
+      "Abas Abdullahi Ahmed","Abdi Hared Garane","Abdihakin Ibrahim Khalif Hussein","Abdirahman Yahye Mohamed Noor",
+      "Abdirashid Abdikadir Mohamed","Ahmed Abdifatah Mohamed","Ahmed Abdulahi Abdi","Amino Abdirahman isak Ali",
+      "Cabdiraxman Maslax Caamir","Farhan Mohamed Fahiye","Fathi Abdiaziz Hassan","Hassan Madey Abow",
+      "Hassan Muktar Mohamed Abukar","Hussein Abdi Mahamed","Ifrax Yuusuf Ismaaciil","Isse Hassan Abdi",
+      "Khalid Ahmed Abdinor","Maxamed Maxamuud Axmed","Mohamed Abdikani Ibrahim Iman","Seynab Maxamed Jaamac",
+      "Suleyman Dahir Muse","Abdisalan Mohamud Yusuf","Ali Mohamed Adan","Fadumo Mohamed Omar Osman",
+      "Falastin Hassan Ahmed","Falis Ismail Ahmed","Farhan Aden Abdi","Halimo Mahad Frahah","Iqro Cilmi Ciise",
+      "Ismail Ali Hussein Ali","Nasteho Osman Ali","Nimco Abshir Osman","Omar Mohamed Saman"
+    ]
+  },
+
+  "ARABI111": {
+    course_name: "Arabi-D111",
+    lecturer: "Abdiaziz M. Abdiaziz",
+    username: "abdiaziz",
+    password: "12",
+    day: "Tuesday",
+    time: "13:30-15:30",
+    faculty: "Year1",
+    students: [
+      "Aisha Mohamed khalif","Bashiir Mahamoud Mohamed","Cawil Shukri Bile","Damac Hussein Ibrahim",
+      "Fardowsa Muuse Cabdiraxman","Hassan Sugal Mahamed","Khadija Mohamed Duale","Mahdi Mohamed Adan",
+      "Riwan Ahmed Adan","Sakariye Ismaaciil Yuusuf","Yahye Salad Duale","Abas Mahamad Ali Mahamu",
+      "Abas Abdullahi Ahmed","Abdi Hared Garane","Abdihakin Ibrahim Khalif Hussein","Abdirahman Yahye Mohamed Noor",
+      "Abdirashid Abdikadir Mohamed","Ahmed Abdifatah Mohamed","Ahmed Abdulahi Abdi","Amino Abdirahman isak Ali",
+      "Cabdiraxman Maslax Caamir","Farhan Mohamed Fahiye","Fathi Abdiaziz Hassan","Hassan Madey Abow",
+      "Hassan Muktar Mohamed Abukar","Hussein Abdi Mahamed","Ifrax Yuusuf Ismaaciil","Isse Hassan Abdi",
+      "Khalid Ahmed Abdinor","Maxamed Maxamuud Axmed","Mohamed Abdikani Ibrahim Iman","Seynab Maxamed Jaamac",
+      "Suleyman Dahir Muse","Abdisalan Mohamud Yusuf","Ali Mohamed Adan","Fadumo Mohamed Omar Osman",
+      "Falastin Hassan Ahmed","Falis Ismail Ahmed","Farhan Aden Abdi","Halimo Mahad Frahah","Iqro Cilmi Ciise",
+      "Ismail Ali Hussein Ali","Nasteho Osman Ali","Nimco Abshir Osman","Omar Mohamed Saman"
+    ]
+  },
+
+  "PHIL-T121": {
+    course_name: "Critical Thinking Skills",
+    lecturer: "Mr.Jamac",
+    username: "jamac",
+    password: "12",
+    day: "Tuesday",
+    time: "16:00-17:40",
+    faculty: "Year1",
+    students: [
+      "Aisha Mohamed khalif","Bashiir Mahamoud Mohamed","Cawil Shukri Bile","Damac Hussein Ibrahim",
+      "Fardowsa Muuse Cabdiraxman","Hassan Sugal Mahamed","Khadija Mohamed Duale","Mahdi Mohamed Adan",
+      "Riwan Ahmed Adan","Sakariye Ismaaciil Yuusuf","Yahye Salad Duale","Abas Mahamad Ali Mahamu",
+      "Abas Abdullahi Ahmed","Abdi Hared Garane","Abdihakin Ibrahim Khalif Hussein","Abdirahman Yahye Mohamed Noor",
+      "Abdirashid Abdikadir Mohamed","Ahmed Abdifatah Mohamed","Ahmed Abdulahi Abdi","Amino Abdirahman isak Ali",
+      "Cabdiraxman Maslax Caamir","Farhan Mohamed Fahiye","Fathi Abdiaziz Hassan","Hassan Madey Abow",
+      "Hassan Muktar Mohamed Abukar","Hussein Abdi Mahamed","Ifrax Yuusuf Ismaaciil","Isse Hassan Abdi",
+      "Khalid Ahmed Abdinor","Maxamed Maxamuud Axmed","Mohamed Abdikani Ibrahim Iman","Seynab Maxamed Jaamac",
+      "Suleyman Dahir Muse","Abdisalan Mohamud Yusuf","Ali Mohamed Adan","Fadumo Mohamed Omar Osman",
+      "Falastin Hassan Ahmed","Falis Ismail Ahmed","Farhan Aden Abdi","Halimo Mahad Frahah","Iqro Cilmi Ciise",
+      "Ismail Ali Hussein Ali","Nasteho Osman Ali","Nimco Abshir Osman","Omar Mohamed Saman"
+    ]
+  },
+
+  "Som-Study111": {
+    course_name: "Somali Study1",
+    lecturer: "Abdirizak Ismail",
+    username: "abdirizak",
+    password: "12",
+    day: "Wednesday",
+    time: "16:00-17:40",
+    faculty: "Year1",
+    students: [
+      "Aisha Mohamed khalif","Bashiir Mahamoud Mohamed","Cawil Shukri Bile","Damac Hussein Ibrahim",
+      "Fardowsa Muuse Cabdiraxman","Hassan Sugal Mahamed","Khadija Mohamed Duale","Mahdi Mohamed Adan",
+      "Riwan Ahmed Adan","Sakariye Ismaaciil Yuusuf","Yahye Salad Duale","Abas Mahamad Ali Mahamu",
+      "Abas Abdullahi Ahmed","Abdi Hared Garane","Abdihakin Ibrahim Khalif Hussein","Abdirahman Yahye Mohamed Noor",
+      "Abdirashid Abdikadir Mohamed","Ahmed Abdifatah Mohamed","Ahmed Abdulahi Abdi","Amino Abdirahman isak Ali",
+      "Cabdiraxman Maslax Caamir","Farhan Mohamed Fahiye","Fathi Abdiaziz Hassan","Hassan Madey Abow",
+      "Hassan Muktar Mohamed Abukar","Hussein Abdi Mahamed","Ifrax Yuusuf Ismaaciil","Isse Hassan Abdi",
+      "Khalid Ahmed Abdinor","Maxamed Maxamuud Axmed","Mohamed Abdikani Ibrahim Iman","Seynab Maxamed Jaamac",
+      "Suleyman Dahir Muse","Abdisalan Mohamud Yusuf","Ali Mohamed Adan","Fadumo Mohamed Omar Osman",
+      "Falastin Hassan Ahmed","Falis Ismail Ahmed","Farhan Aden Abdi","Halimo Mahad Frahah","Iqro Cilmi Ciise",
+      "Ismail Ali Hussein Ali","Nasteho Osman Ali","Nimco Abshir Osman","Omar Mohamed Saman"
+    ]
+  },
+
+  /* ---------- NEW THURSDAY PT / EDU / LAW COURSES ---------- */
+
+  "PT-GMATH": {
+    course_name: "General Mathematics",
+    lecturer: "Mr Abdikadir",
+    username: "abdikadir",
+    password: "12",
+    day: "Thursday",
+    time: "07:00-09:30",
+    faculty: "PT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed",
+      "Zakria Bashir Abdisalan","Farhiyo Ibrahim Mohamed","Harun Abdirahman Ali","Hussein Yusuf Abdi",
+      "Jama Abdinasir Jama","Khalid Abdullahi Ahmed","Mahamed Abdikadir Ali","Mohamed Abdullahi Hassan Osman",
+      "Mohamed Hassan Isak","Mohamed Hassan Siyad","Suleiman Omar Abdullahi Mohamed","Usaame Abdikarin Abdullahi"
+    ]
+  },
+
+  "PT-ENGL1": {
+    course_name: "English Language 1",
+    lecturer: "Yusuf Iman",
+    username: "yusuf",
+    password: "12",
+    day: "Thursday",
+    time: "09:30-11:30",
+    faculty: "PT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed",
+      "Zakria Bashir Abdisalan","Farhiyo Ibrahim Mohamed","Harun Abdirahman Ali","Hussein Yusuf Abdi",
+      "Jama Abdinasir Jama","Khalid Abdullahi Ahmed","Mahamed Abdikadir Ali","Mohamed Abdullahi Hassan Osman",
+      "Mohamed Hassan Isak","Mohamed Hassan Siyad","Suleiman Omar Abdullahi Mohamed","Usaame Abdikarin Abdullahi"
+    ]
+  },
+
+  "PT-BUS": {
+    course_name: "Introduction to Business",
+    lecturer: "Yusuf Abdullahi",
+    username: "yusufabdullahi",
+    password: "12",
+    day: "Thursday",
+    time: "13:30-15:30",
+    faculty: "PT",
+    students: [
+      "Farhiyo Ibrahim Mohamed","Harun Abdirahman Ali","Hussein Yusuf Abdi","Jama Abdinasir Jama",
+      "Khalid Abdullahi Ahmed","Mahamed Abdikadir Ali","Mohamed Abdullahi Hassan Osman","Mohamed Hassan Isak",
+      "Mohamed Hassan Siyad","Suleiman Omar Abdullahi Mohamed","Usaame Abdikarin Abdullahi","Abdullahi Mohamed"
+    ]
+  },
+
+  "PT-CL": {
+    course_name: "C/Language",
+    lecturer: "Wadani",
+    username: "wadani",
+    password: "12",
+    day: "Thursday",
+    time: "13:30-15:30",
+    faculty: "PT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed"
+    ]
+  },
+
+  "PT-COMP": {
+    course_name: "Computer Applications",
+    lecturer: "Nuh",
+    username: "nuh",
+    password: "12",
+    day: "Thursday",
+    time: "16:00-17:40",
+    faculty: "PT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed",
+      "Zakria Bashir Abdisalan"
+    ]
+  },
+
+  /* ---------- EDUCATION (Thursday) ---------- */
+  "EDU-ENGL1": {
+    course_name: "اللغة الإنجليزية 1",
+    lecturer: "Yusuf Iman",
+    username: "yusuf",
+    password: "12",
+    day: "Thursday",
+    time: "07:00-09:00",
+    faculty: "Education",
+    students: [
+      "Abdi jabril Dalxe","Abdi Muse Ahmed","Abdifatah Hussein Hassan","Abdinur Hassan Muhumed","Abdirahman Sirad Abdirahman",
+      "Abdirsak Ibrahim Mahamed","Abdisamad Hassan Siyad","Abdishakur Abdullahi Moallim Barre","Abdiwahab Jelow Abdirashid","Abdiwali Mohamed Elmoge",
+      "Abdullahi Abdirsak Ahmed","Abdullahi Mahamed Hassam","Abdullahi Osmail Omar","Adan Hussein Derow","Aden Omar Hassan",
+      "Ahmed Gele Mustaf","Ahmed Hassan Hussein","Ahmed Salat Abdi","Amin Mohamed Omar","Bashir Jabril Hassan",
+      "Bashir Mahamed Hassam","Dalmar Said Mahamed","Fadumo Said Muse","Fardowsa Bashir AbdilLahi","Fardowsa Said Muse",
+      "Farhan Ibrahim Mohamed","Hafso Siyad Adan","Hassan Mohamed Ibrahim","Hibo Sharif Nor","Hussein Mohamed Adan",
+      "Ibrahim Awad Salah","Ibrahim Mahamed Bashir","Ibrahim Osman Ahmed","Iqra Farah Salad","Khadar Maxamed Ibrahim",
+      "Mahamud Mahamed Osman","Mahamud Nur Dahir","Maryan Ahmed Hassan","Maryan Mohamed OSMAN","Maxamed Xassan Axmed",
+      "Mohamed Ahmed Abdirahman","Mohamed Ahmed Ali","Mohamed Mahamud Abdi","Mohamed Mahamud Roble","Nur Mahamed Ahmed",
+      "Omar Ismail Ibrahim","Rahmo Ali Salah","Sabirin JamaAadan","Sacdiyo Cabadiqaadir Maxamuud","Salman Jama Adan",
+      "Sudeys Jama Adan"
+    ]
+  },
+
+  "EDU-ARAB": {
+    course_name: "اللغة العربية 1",
+    lecturer: "Muhiyadin Ade",
+    username: "ade",
+    password: "12",
+    day: "Thursday",
+    time: "09:30-11:30",
+    faculty: "Education",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed",
+      "Zakria Bashir Abdisalan","Farhiyo Ibrahim Mohamed","Harun Abdirahman Ali","Hussein Yusuf Abdi",
+      "Jama Abdinasir Jama","Khalid Abdullahi Ahmed","Mahamed Abdikadir Ali","Mohamed Abdullahi Hassan Osman",
+      "Mohamed Hassan Isak","Mohamed Hassan Siyad","Suleiman Omar Abdullahi Mohamed","Usaame Abdikarin Abdullahi"
+    ]
+  },
+
+  "EDU-HIST": {
+    course_name: "تريخ التشريع",
+    lecturer: "Dr Bade",
+    username: "bade",
+    password: "12",
+    day: "Thursday",
+    time: "13:30-15:30",
+    faculty: "Education",
+    students: [
+      "Abdi jabril Dalxe","Abdi Muse Ahmed","Abdifatah Hussein Hassan","Abdinur Hassan Muhumed","Abdirahman Sirad Abdirahman",
+      "Abdirsak Ibrahim Mahamed","Abdisamad Hassan Siyad","Abdishakur Abdullahi Moallim Barre","Abdiwahab Jelow Abdirashid","Abdiwali Mohamed Elmoge",
+      "Abdullahi Abdirsak Ahmed","Abdullahi Mahamed Hassam","Abdullahi Osmail Omar","Adan Hussein Derow","Aden Omar Hassan",
+      "Ahmed Gele Mustaf","Ahmed Hassan Hussein","Ahmed Salat Abdi","Amin Mohamed Omar","Bashir Jabril Hassan",
+      "Bashir Mahamed Hassam","Dalmar Said Mahamed","Fadumo Said Muse","Fardowsa Bashir AbdilLahi","Fardowsa Said Muse",
+      "Farhan Ibrahim Mohamed","Hafso Siyad Adan","Hassan Mohamed Ibrahim","Hibo Sharif Nor","Hussein Mohamed Adan",
+      "Ibrahim Awad Salah","Ibrahim Mahamed Bashir","Ibrahim Osman Ahmed","Iqra Farah Salad","Khadar Maxamed Ibrahim",
+      "Mahamud Mahamed Osman","Mahamud Nur Dahir","Maryan Ahmed Hassan","Maryan Mohamed OSMAN","Maxamed Xassan Axmed",
+      "Mohamed Ahmed Abdirahman","Mohamed Ahmed Ali","Mohamed Mahamud Abdi","Mohamed Mahamud Roble","Nur Mahamed Ahmed",
+      "Omar Ismail Ibrahim","Rahmo Ali Salah","Sabirin JamaAadan","Sacdiyo Cabadiqaadir Maxamuud","Salman Jama Adan",
+      "Sudeys Jama Adan"
+    ]
+  },
+
+  "EDU-USOOL": {
+    course_name: "اصول التربية",
+    lecturer: "Ahmed Nur",
+    username: "ahmed",
+    password: "12",
+    day: "Thursday",
+    time: "16:00-17:40",
+    faculty: "Education",
+    students: [
+      "Abdi jabril Dalxe","Abdi Muse Ahmed","Abdifatah Hussein Hassan","Abdinur Hassan Muhumed","Abdirahman Sirad Abdirahman",
+      "Abdirsak Ibrahim Mahamed","Abdisamad Hassan Siyad","Abdishakur Abdullahi Moallim Barre","Abdiwahab Jelow Abdirashid","Abdiwali Mohamed Elmoge",
+      "Abdullahi Abdirsak Ahmed","Abdullahi Mahamed Hassam","Abdullahi Osmail Omar","Adan Hussein Derow","Aden Omar Hassan",
+      "Ahmed Gele Mustaf","Ahmed Hassan Hussein","Ahmed Salat Abdi","Amin Mohamed Omar","Bashir Jabril Hassan",
+      "Bashir Mahamed Hassam","Dalmar Said Mahamed","Fadumo Said Muse","Fardowsa Bashir AbdilLahi","Fardowsa Said Muse",
+      "Farhan Ibrahim Mohamed","Hafso Siyad Adan","Hassan Mohamed Ibrahim","Hibo Sharif Nor","Hussein Mohamed Adan",
+      "Ibrahim Awad Salah","Ibrahim Mahamed Bashir","Ibrahim Osman Ahmed","Iqra Farah Salad","Khadar Maxamed Ibrahim",
+      "Mahamud Mahamed Osman","Mahamud Nur Dahir","Maryan Ahmed Hassan","Maryan Mohamed OSMAN","Maxamed Xassan Axmed",
+      "Mohamed Ahmed Abdirahman","Mohamed Ahmed Ali","Mohamed Mahamud Abdi","Mohamed Mahamud Roble","Nur Mahamed Ahmed",
+      "Omar Ismail Ibrahim","Rahmo Ali Salah","Sabirin JamaAadan","Sacdiyo Cabadiqaadir Maxamuud","Salman Jama Adan",
+      "Sudeys Jama Adan"
+    ]
+  },
+
+  /* ---------- LAW (Thursday) ---------- */
+  "LAW-Q1": {
+    course_name: "مدخل الي علم القنون 1",
+    lecturer: "Sheikh Duraan",
+    username: "duraan",
+    password: "12",
+    day: "Thursday",
+    time: "13:30-15:30",
+    faculty: "Law",
+    students: [
+      "Abdiladif Ilyas Mohamed Dahir","Abdiqadir Ahmed Abdi","Abdirisak Ali Matan","Abdirsak Mahad Iftin",
+      "Adan Osman Hassan","Guled Abdi Ahmed","Hassan Mahad Ahmed","Idris Mahamed Abdi","maxamed Abshir Maxamed",
+      "Maxamed Khadar Taajir Cabdi","Mohamed Abdiwahab Mokoma","Mohamed Abdulahi Issack"
+    ]
+  },
+
+  "LAW-Q2": {
+    course_name: "مدخل الي علم القنون 2",
+    lecturer: "Mahad Abdisalam",
+    username: "mahad",
+    password: "12",
+    day: "Thursday",
+    time: "16:00-17:40",
+    faculty: "Law",
+    students: [
+      "Abdiladif Ilyas Mohamed Dahir","Abdiqadir Ahmed Abdi","Abdirisak Ali Matan","Abdirsak Mahad Iftin",
+      "Adan Osman Hassan","Guled Abdi Ahmed","Hassan Mahad Ahmed","Idris Mahamed Abdi","maxamed Abshir Maxamed",
+      "Maxamed Khadar Taajir Cabdi","Mohamed Abdiwahab Mokoma","Mohamed Abdulahi Issack"
+    ]
+  },
+
+  /* ---------- FRIDAY PT ---------- */
+  "PT-SOM": {
+    course_name: "الدراسة الصومالية",
+    lecturer: "Abdirizak Ismail",
+    username: "abdirizak",
+    password: "12",
+    day: "Friday",
+    time: "07:00-09:00",
+    faculty: "PT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed",
+      "Zakria Bashir Abdisalan","Farhiyo Ibrahim Mohamed","Harun Abdirahman Ali","Hussein Yusuf Abdi",
+      "Jama Abdinasir Jama","Khalid Abdullahi Ahmed","Mahamed Abdikadir Ali","Mohamed Abdullahi Hassan Osman",
+      "Mohamed Hassan Isak","Mohamed Hassan Siyad","Suleiman Omar Abdullahi Mohamed","Usaame Abdikarin Abdullahi"
+    ]
+  },
+
+  "PT-ARAB2": {
+    course_name: "اللغة العربية 1",
+    lecturer: "Muhiyadin Ade",
+    username: "ade",
+    password: "12",
+    day: "Friday",
+    time: "09:30-11:30",
+    faculty: "PT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed",
+      "Zakria Bashir Abdisalan","Farhiyo Ibrahim Mohamed","Harun Abdirahman Ali","Hussein Yusuf Abdi",
+      "Jama Abdinasir Jama","Khalid Abdullahi Ahmed","Mahamed Abdikadir Ali","Mohamed Abdullahi Hassan Osman",
+      "Mohamed Hassan Isak","Mohamed Hassan Siyad","Suleiman Omar Abdullahi Mohamed","Usaame Abdikarin Abdullahi"
+    ]
+  },
+
+  "PT-ISLAM": {
+    course_name: "الثقافة الإسلامية",
+    lecturer: "Hassan Abdi",
+    username: "hassan",
+    password: "12",
+    day: "Friday",
+    time: "13:30-15:30",
+    faculty: "PT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed",
+      "Zakria Bashir Abdisalan"
+    ]
+  },
+
+  "PT-CRIT": {
+    course_name: "مهارات التفكير",
+    lecturer: "Adam Abdi",
+    username: "adam",
+    password: "12",
+    day: "Friday",
+    time: "16:00-17:40",
+    faculty: "PT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed"
+    ]
+  },
+
+  "PT-COMP2": {
+    course_name: "مبادي الحاسوب",
+    lecturer: "Nuh",
+    username: "nuh",
+    password: "12",
+    day: "Friday",
+    time: "16:00-17:40",
+    faculty: "PT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed"
+    ]
+  },
+
+  /* ---------- SATURDAY FT (added as you requested) ---------- */
+  "FT-ENGL1-SAT": {
+    course_name: "English Language 1",
+    lecturer: "Yusuf Iman",
+    username: "yusuf",
+    password: "12",
+    day: "Saturday",
+    time: "13:30-15:30",
+    faculty: "FT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed",
+      "Zakria Bashir Abdisalan","Farhiyo Ibrahim Mohamed","Harun Abdirahman Ali","Hussein Yusuf Abdi",
+      "Jama Abdinasir Jama","Khalid Abdullahi Ahmed","Mahamed Abdikadir Ali","Mohamed Abdullahi Hassan Osman",
+      "Mohamed Hassan Isak","Mohamed Hassan Siyad","Suleiman Omar Abdullahi Mohamed","Usaame Abdikarin Abdullahi"
+    ]
+  },
+
+  "FT-ISLAM-SAT": {
+    course_name: "Islamic Studies",
+    lecturer: "Ibrahim Abdi",
+    username: "ibrahim",
+    password: "12",
+    day: "Saturday",
+    time: "16:00-17:40",
+    faculty: "FT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed",
+      "Zakria Bashir Abdisalan","Farhiyo Ibrahim Mohamed","Harun Abdirahman Ali","Hussein Yusuf Abdi",
+      "Jama Abdinasir Jama","Khalid Abdullahi Ahmed","Mahamed Abdikadir Ali","Mohamed Abdullahi Hassan Osman",
+      "Mohamed Hassan Isak","Mohamed Hassan Siyad","Suleiman Omar Abdullahi Mohamed","Usaame Abdikarin Abdullahi"
+    ]
+  },
+
+  /* ---------- SUNDAY FT (added) ---------- */
+  "FT-COMP-SUN": {
+    course_name: "Computer Application",
+    lecturer: "Dahabo Mubarack",
+    username: "dahabo",
+    password: "12",
+    day: "Sunday",
+    time: "13:30-15:30",
+    faculty: "FT",
+    students: [
+      "Abdikafi Salah Adan Hassa","Abdi Hared Garane","Adan Abdi Jimale","Ahmed Abdinur Abdrahman",
+      "Ahmed Mahamed Ali","Amal Abdifatah Bishar","Bashir Hussein Ashkir","Cabdicasiis Cabdi Aadan",
+      "Cabdicasiis Cabdiqaadir Axmed male","Cabdicasiis Xassan Cumar","Cabdirashiid Cabdinuur Ismaiciil",
+      "fadumo Farah Omar","Ibraahim Hassan Cabdiraxman","Isman Isse Munye","Liban Abdinaasir Abdirahman",
+      "Mahamed Abdifatah Ali","maxamed Cabdi cumar jirre","maxamed faarax Diini","Maxamed Ibraahim Cabdi",
+      "Mustaf Cabdiqadir Xuseen","Nasra Yusuf Mohamed","Omar Isse Mohamud","Rabic Mahamed Abdullahi",
+      "Shafici Abdullahi Abdi","sucdi khaliif warsame","Sumayo Abdikarin Ali","Usame Abdirashid Wali",
+      "Yusuf Hussein Dhubow","Yusuf Mohamed Osman Abdi","Zakariya Abdikadir Mahamed","zakariye mohamed ahmed",
+      "Zakria Bashir Abdisalan","Farhiyo Ibrahim Mohamed","Harun Abdirahman Ali","Hussein Yusuf Abdi",
+      "Jama Abdinasir Jama","Khalid Abdullahi Ahmed","Mahamed Abdikadir Ali","Mohamed Abdullahi Hassan Osman",
+      "Mohamed Hassan Isak","Mohamed Hassan Siyad","Suleiman Omar Abdullahi Mohamed","Usaame Abdikarin Abdullahi"
+    ]
+  },
+
+  "FT-MED-SUN": {
+    course_name: "Medical Terminology",
+    lecturer: "Abdinasir",
+    username: "abdinasir",
+    password: "12",
+    day: "Sunday",
+    time: "16:00-17:40",
+    faculty: "FT",
+    students: [
+      "Aisha Mohamed khalif","Bashiir Mahamoud Mohamed","Cawil Shukri Bile","Damac Hussein Ibrahim",
+      "Fardowsa Muuse Cabdiraxman","Hassan Sugal Mahamed","Khadija Mohamed Duale","Mahdi Mohamed Adan",
+      "Riwan Ahmed Adan","Yahye Salad Duale","Abdisalan Mohamud Yusuf","Ali Mohamed Adan","Fadumo Mohamed Omar Osman",
+      "Falastin Hassan Ahmed","Falis Ismail Ahmed","Farhan Aden Abdi","Halimo Mahad Frahah","Iqro Cilmi Ciise",
+      "Ismail Ali Hussein Ali","Nasteho Osman Ali","Nimco Abshir Osman","Omar Mohamed Saman"
+    ]
+  }
+
+}; // end COURSES
+
+// -------------------------- ALPHABETIZE STUDENT LISTS (A → Z by first word) --------------------------
+for (const code in COURSES) {
+  try {
+    if (Array.isArray(COURSES[code].students)) {
+      // localeCompare with sensitivity base for case-insensitive basic alphabetic sort
+      COURSES[code].students.sort((a,b)=> a.localeCompare(b, undefined, {sensitivity: 'base'}));
+    }
+  } catch(e) {
+    console.error("Sorting failed for", code, e);
+  }
+}
+
+// -------------------------- BUILD LECTURERS MAP (support multiple courses per username) --------------------------
+const LECTURERS = {};
+for (const code in COURSES) {
+  const c = COURSES[code];
+  const uname = (c.username||"").toLowerCase();
+  if (!LECTURERS[uname]) LECTURERS[uname] = [];
+  LECTURERS[uname].push({
+    courseCode: code,
+    name: c.lecturer,
+    password: c.password,
+    day: c.day,
+    time: c.time,
+    courseName: c.course_name
+  });
+}
+
+// admin credentials
+const ADMIN_USER = "admin";
+const ADMIN_PASS = "admin123";
+
+// -------------------------- STORAGE --------------------------
+if (!localStorage.getItem("attendance")) localStorage.setItem("attendance", "{}");
+
+// -------------------------- TIME HELPERS --------------------------
+function parseTime(t) {
+  const parts = t.split("-");
+  if (parts.length !== 2) return null;
+  const today = new Date();
+  const dateStr = today.toDateString();
+  const start = new Date(dateStr + " " + parts[0].trim());
+  const end = new Date(dateStr + " " + parts[1].trim());
+  return {start,end};
+}
+function isSameWeekday(day) {
+  const nowDay = new Date().toLocaleDateString('en-US',{weekday:'long'});
+  return nowDay.toLowerCase() === day.toLowerCase();
+}
+function isActiveNow(day, timeRange) {
+  if (!isSameWeekday(day)) return false;
+  const range = parseTime(timeRange);
+  if (!range) return false;
+  const now = new Date();
+  return now >= range.start && now <= range.end;
+}
+function isExpired(day, timeRange) {
+  if (!isSameWeekday(day)) return false;
+  const range = parseTime(timeRange);
+  if (!range) return false;
+  const now = new Date();
+  return now > range.end;
+}
+
+// -------------------------- UI & Login --------------------------
+const app = document.getElementById('app');
+
+function renderLogin(err="") {
+  app.innerHTML = `
+    <div class="card">
+      <h3>Login</h3>
+      ${err? `<div class="alert err">${err}</div>` : ""}
+      <select id="role" class="input"><option value="lecturer">Lecturer</option><option value="admin">Admin</option></select>
+      <input id="user" class="input" placeholder="Username">
+      <input id="pass" class="input" type="password" placeholder="Password">
+      <button class="btn" id="btnLogin">Login</button>
+    </div>
+  `;
+  document.getElementById('btnLogin').onclick = attemptLogin;
+}
+renderLogin();
+
+function attemptLogin() {
+  const role = document.getElementById('role').value;
+  const u = (document.getElementById('user').value||"").toLowerCase().trim();
+  const p = (document.getElementById('pass').value||"").trim();
+
+  if (role === 'admin') {
+    if (u === ADMIN_USER && p === ADMIN_PASS) return renderAdmin();
+    return renderLogin("Invalid admin credentials");
+  }
+
+  if (!LECTURERS[u]) return renderLogin("Invalid username");
+  const ok = LECTURERS[u].some(x=>x.password === p);
+  if (!ok) return renderLogin("Invalid password");
+
+  sessionStorage.setItem('diu_user', u);
+  renderLecturer(u);
+}
+
+// -------------------------- LECTURER DASHBOARD --------------------------
+function renderLecturer(username) {
+  const courses = LECTURERS[username] || [];
+  const todayCourses = courses.filter(c => {
+    const wd = new Date().toLocaleDateString('en-US',{weekday:'long'});
+    return wd.toLowerCase() === c.day.toLowerCase();
+  });
+  const active = todayCourses.filter(c => isActiveNow(c.day, c.time));
+  const nowLabel = active.length ? "<div class='small'><b>Active class(es) — you can mark attendance</b></div>" : "<div class='alert err'>No active class now</div>";
+
+  let html = `<div class="card"><h3>Welcome ${username}</h3><div class="small">Assigned lessons: ${courses.length}</div><hr>`;
+  html += `<button class="btn" onclick="logout()">Logout</button> <button class="btn" onclick="exportAllToday('${username}')">Export Today's PDF (all)</button><hr>`;
+  html += nowLabel;
+
+  if (active.length) {
+    active.forEach(c=> {
+      html += courseSummaryBlock(c.courseCode, true);
+    });
+  } else if (todayCourses.length) {
+    html += `<div class="small"><b>Today's scheduled classes</b></div>`;
+    todayCourses.forEach(c=> html += courseSummaryBlock(c.courseCode, false));
+  } else {
+    html += `<div class="small">No classes scheduled for today for this account.</div>`;
+  }
+
+  html += `</div>`;
+  app.innerHTML = html;
+}
+
+function courseSummaryBlock(code, isActive) {
+  const course = COURSES[code];
+  const enabled = isActive ? "" : "disabled";
+  const btn = `<button class="btn ${enabled}" ${isActive? "": "disabled"} onclick="openClass('${code}')">Open & Mark</button>`;
+  const exportBtn = `<button class="btn" onclick="exportTodayPDF('${code}')">Export PDF</button>`;
+  const preview = course.students.slice(0,6).map(s=>`<div class="student">${s}</div>`).join("");
+  return `<div class="card"><h4>${course.course_name} — ${course.lecturer} <span class="small">(${course.day} ${course.time})</span></h4>${preview}<div style="margin-top:8px">${btn} ${exportBtn}</div></div>`;
+}
+
+function logout() {
+  sessionStorage.removeItem('diu_user');
+  renderLogin();
+}
+
+// -------------------------- OPEN CLASS / MARKING --------------------------
+function openClass(courseCode) {
+  const course = COURSES[courseCode];
+  if (!isActiveNow(course.day, course.time)) {
+    showPopup("Attendance can only be marked during the scheduled class time. Your session is not within that time.");
+    return;
+  }
+  const today = new Date().toISOString().slice(0,10);
+  const store = JSON.parse(localStorage.getItem('attendance')||'{}');
+  if (!store[courseCode]) store[courseCode] = {};
+  if (!store[courseCode][today]) {
+    store[courseCode][today] = {};
+    course.students.forEach(s => store[courseCode][today][s] = false);
+    localStorage.setItem('attendance', JSON.stringify(store));
+  }
+
+  const rows = course.students.map((s,i)=> {
+    const present = store[courseCode][today][s];
+    const btnText = present ? "Present" : "Mark Present";
+    return `<div class="student" id="r-${courseCode}-${i}"><span>${s}</span><div><button class="btn" onclick="togglePresent('${courseCode}','${escapeForAttr(s)}',${i})">${btnText}</button></div></div>`;
+  }).join("");
+
+  app.innerHTML = `<div class="card"><h3>Mark Attendance — ${course.course_name}</h3><div class="small">Lecturer: ${course.lecturer} — ${course.day} ${course.time}</div><hr><div id="students-list">${rows}</div><div style="margin-top:12px"><button class="btn" onclick="submitAttendance('${courseCode}')">Submit</button> <button class="btn" onclick="renderLecturer(sessionStorage.getItem('diu_user'))">Back</button> <button class="btn" onclick="exportTodayPDF('${courseCode}')">Export PDF</button></div><div id="mark-msg"></div></div>`;
+}
+
+function escapeForAttr(s) {
+  return s.replace(/'/g,"\\'").replace(/"/g,'\\"');
+}
+
+function togglePresent(courseCode, student, idx) {
+  const course = COURSES[courseCode];
+  if (!isActiveNow(course.day, course.time)) { showPopup("Class time has ended. Cannot change attendance."); return; }
+  const today = new Date().toISOString().slice(0,10);
+  const store = JSON.parse(localStorage.getItem('attendance')||'{}');
+  if (!store[courseCode] || !store[courseCode][today]) return;
+  store[courseCode][today][student] = !store[courseCode][today][student];
+  localStorage.setItem('attendance', JSON.stringify(store));
+  const btn = document.querySelector(`#r-${courseCode}-${idx} button`);
+  if (btn) btn.textContent = store[courseCode][today][student] ? "Present" : "Mark Present";
+}
+
+function submitAttendance(courseCode) {
+  const course = COURSES[courseCode];
+  if (!isActiveNow(course.day, course.time)) { showPopup("Class time has ended. Attendance locked."); return; }
+  document.getElementById('mark-msg').innerHTML = `<div class="alert ok">Attendance saved for ${course.course_name}</div>`;
+}
+
+// -------------------------- ADMIN --------------------------
+function renderAdmin() {
+  const rows = [];
+  for (const uname in LECTURERS) {
+    LECTURERS[uname].forEach(x => rows.push(`<tr><td>${x.courseCode}</td><td>${x.name}</td><td>${x.courseName}</td><td>${x.day} ${x.time}</td></tr>`));
+  }
+  const rowsHtml = rows.join("");
+  app.innerHTML = `<div class="card"><h3>Admin Dashboard</h3><button class="btn" onclick="adminLectures()">Lecturers & Lessons</button> <button class="btn" onclick="adminAttendance()">Attendance Records</button> <button class="btn red" onclick="renderLogin()">Logout</button></div>`;
+}
+
+function adminLectures() {
+  let rows = "";
+  for (const uname in LECTURERS) {
+    LECTURERS[uname].forEach(L => {
+      rows += `<tr><td>${L.courseCode}</td><td>${L.name}</td><td>${L.courseName}</td><td>${L.day} ${L.time}</td></tr>`;
+    });
+  }
+  app.innerHTML = `<div class="card"><h3>Lecturers & Lessons</h3><table class="table"><tr><th>Code</th><th>Lecturer</th><th>Course</th><th>Schedule</th></tr>${rows}</table><button class="btn" onclick="renderAdmin()">Back</button></div>`;
+}
+
+function adminAttendance() {
+  const store = JSON.parse(localStorage.getItem('attendance')||'{}');
+  let out = "";
+  for (const code in COURSES) {
+    const course = COURSES[code];
+    const logs = store[code] || {};
+    const keys = Object.keys(logs).sort().reverse();
+    const table = keys.length ? `<table class="table"><tr><th>Date</th><th>Absent count</th><th>View</th></tr>${keys.map(d=>`<tr><td>${d}</td><td>${Object.values(logs[d]).filter(v=>!v).length}</td><td><button class="btn" onclick='showPopupAbsent("${code}","${d}")'>View names</button></td></tr>`).join("")}</table>` : "<div class='alert err'>No submissions</div>";
+    out += `<div class="card"><strong>${code} — ${course.course_name}</strong><br>Lecturer: ${course.lecturer}<br>Schedule: ${course.day} ${course.time}<br><br>${table}</div>`;
+  }
+  app.innerHTML = `<h3>Attendance Records</h3>${out}<button class="btn" onclick="renderAdmin()">Back</button>`;
+}
+
+function showPopupAbsent(courseCode, date) {
+  const store = JSON.parse(localStorage.getItem('attendance')||'{}');
+  const logs = (store[courseCode] && store[courseCode][date]) ? store[courseCode][date] : null;
+  if (!logs) { showPopup("No records for that date."); return; }
+  const absent = Object.keys(logs).filter(s => !logs[s]);
+  showPopup(absent.length ? absent.join("<br>") : "None");
+}
+
+// -------------------------- EXPORT / PDF --------------------------
+function exportTodayPDF(courseCode) {
+  const store = JSON.parse(localStorage.getItem('attendance')||'{}');
+  const today = new Date().toISOString().slice(0,10);
+  const course = COURSES[courseCode];
+  const logs = store[courseCode] && store[courseCode][today] ? store[courseCode][today] : null;
+  let html = `<html><head><title>${course.course_name} - ${today}</title><style>body{font-family:Arial}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px}</style></head><body>`;
+  html += `<h2>${course.course_name}</h2><div>Lecturer: ${course.lecturer}</div><div>Date: ${today}</div><br/>`;
+  if (!logs) html += "<div>No attendance recorded yet for today.</div>";
+  else {
+    html += "<table><tr><th>Student</th><th>Present</th></tr>";
+    course.students.forEach(s => html += `<tr><td>${s}</td><td>${logs[s] ? 'Yes' : 'No'}</td></tr>`);
+    html += "</table>";
+  }
+  html += "</body></html>";
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(()=> w.print(), 300);
+}
+
+function exportAllToday(username) {
+  const store = JSON.parse(localStorage.getItem('attendance')||'{}');
+  const today = new Date().toISOString().slice(0,10);
+  const courses = LECTURERS[username] || [];
+  let html = `<html><head><title>Attendance All - ${today}</title><style>body{font-family:Arial}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px}</style></head><body>`;
+  html += `<h1>Attendance Reports — ${today}</h1>`;
+  courses.forEach(c => {
+    if (new Date().toLocaleDateString('en-US',{weekday:'long'}).toLowerCase() !== c.day.toLowerCase()) return;
+    const code = c.courseCode;
+    const course = COURSES[code];
+    html += `<h2>${course.course_name} (${code})</h2>`;
+    const logs = store[code] && store[code][today] ? store[code][today] : null;
+    if (!logs) html += `<div>No attendance recorded</div>`;
+    else {
+      html += `<table><tr><th>Student</th><th>Present</th></tr>`;
+      course.students.forEach(s => html += `<tr><td>${s}</td><td>${logs[s] ? 'Yes' : 'No'}</td></tr>`);
+      html += `</table>`;
+    }
+    html += `<hr/>`;
+  });
+  html += "</body></html>";
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(()=> w.print(), 400);
+}
+
+// -------------------------- POPUP --------------------------
+function showPopup(msg) {
+  document.getElementById('overlay').style.display = 'block';
+  const pop = document.getElementById('popup');
+  pop.style.display = 'block';
+  pop.innerHTML = `<h3>Notice</h3><div style="margin:8px 0">${msg}</div><div style="text-align:right"><button class="btn" onclick="closePopup()">Close</button></div>`;
+}
+function closePopup(){ document.getElementById('overlay').style.display = 'none'; document.getElementById('popup').style.display = 'none'; }
+
+// -------------------------- end --------------------------
+</script>
+</body>
+</html>
